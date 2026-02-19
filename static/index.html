@@ -6,40 +6,50 @@
     <title>每日股票分析控制台</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; padding-top: 50px; }
+        body { background-color: #f8f9fa; padding-top: 50px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .container { max-width: 800px; }
-        .card { margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        #status { font-weight: bold; }
-        .report-content { white-space: pre-wrap; background: #fff; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6; max-height: 500px; overflow-y: auto; }
+        .card { border: none; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 8px 16px rgba(0,0,0,0.05); }
+        .card-header { background-color: #fff; border-bottom: 1px solid #f0f0f0; border-radius: 12px 12px 0 0 !important; font-weight: bold; }
+        .btn-primary { background-color: #007bff; border: none; border-radius: 8px; padding: 10px 20px; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .report-content { white-space: pre-wrap; background: #fdfdfd; padding: 20px; border-radius: 8px; border: 1px solid #eee; max-height: 600px; overflow-y: auto; font-size: 14px; line-height: 1.6; }
+        .stock-tag { display: inline-block; padding: 2px 8px; background: #e7f3ff; color: #007bff; border-radius: 4px; font-size: 12px; margin-right: 5px; }
+        .time-tag { color: #999; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2 class="text-center mb-4">📈 每日股票分析控制台</h2>
+        <h2 class="text-center mb-5">📊 每日股票分析控制台</h2>
         
         <div class="card">
+            <div class="card-header">🚀 触发分析</div>
             <div class="card-body">
-                <h5 class="card-title">触发分析</h5>
-                <p class="card-text">手动触发对 NVDA, GOOGL, AMZN 的最新数据分析。</p>
-                <button id="analyzeBtn" class="btn btn-primary">执行智能分析</button>
+                <p class="text-muted small">系统将同时分析：<span class="stock-tag">NVDA</span> <span class="stock-tag">GOOGL</span> <span class="stock-tag">AMZN</span></p>
+                <button id="analyzeBtn" class="btn btn-primary w-100">立即开始智能分析</button>
                 <div id="analyzeStatus" class="mt-3"></div>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">历史报告</h5>
-                <div class="list-group" id="historyList">
-                    <p class="text-muted">正在加载历史记录...</p>
+            <div class="card-header">📂 历史分析报告</div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="historyList">
+                    <div class="p-4 text-center text-muted">正在载入数据...</div>
                 </div>
             </div>
         </div>
 
+        <!-- 报告详情 Modal 效果 -->
         <div id="reportModal" class="card d-none">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>📄 报告详情: <span id="reportTitle"></span></span>
+                <button class="btn-close" onclick="closeReport()"></button>
+            </div>
             <div class="card-body">
-                <h5 class="card-title">分析报告详情</h5>
-                <div id="reportDetail" class="report-content mt-3"></div>
-                <button class="btn btn-secondary mt-3" onclick="document.getElementById('reportModal').classList.add('d-none')">关闭</button>
+                <div id="reportDetail" class="report-content"></div>
+                <div class="text-end mt-3">
+                    <button class="btn btn-secondary btn-sm" onclick="closeReport()">返回列表</button>
+                </div>
             </div>
         </div>
     </div>
@@ -47,67 +57,96 @@
     <script>
         const API_BASE = '/api/v1';
 
-        // 触发分析
+        // 提交分析
         document.getElementById('analyzeBtn').onclick = async () => {
             const btn = document.getElementById('analyzeBtn');
             const status = document.getElementById('analyzeStatus');
             btn.disabled = true;
-            status.innerHTML = '<div class="alert alert-info">分析任务已提交，请稍候...</div>';
+            status.innerHTML = '<div class="alert alert-info py-2">任务正在提交至云端，请稍候...</div>';
             
             try {
-                const res = await fetch(`${API_BASE}/analysis/analyze`, { method: 'POST' });
-                const data = await res.json();
-                if (data.task_id) {
-                    status.innerHTML = `<div class="alert alert-success">任务提交成功！Task ID: ${data.task_id}。请查看 Telegram 或刷新历史记录。</div>`;
+                // 必须发送 JSON Body 以避免 422 错误
+                const response = await fetch(`${API_BASE}/analysis/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        stock_codes: ["NVDA", "GOOGL", "AMZN"],
+                        async_mode: true, // 使用异步模式防止网关超时
+                        report_type: "detailed"
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    status.innerHTML = `<div class="alert alert-success py-2">✅ 任务已接受！请留意您的 Telegram 通知。</div>`;
                 } else {
-                    status.innerHTML = '<div class="alert alert-danger">提交失败。</div>';
+                    const errorMsg = data.detail?.message || data.message || '未知错误';
+                    status.innerHTML = `<div class="alert alert-danger py-2">❌ 提交失败: ${errorMsg}</div>`;
                 }
             } catch (err) {
-                status.innerHTML = `<div class="alert alert-danger">错误: ${err.message}</div>`;
+                status.innerHTML = `<div class="alert alert-danger py-2">❌ 网络错误: ${err.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                setTimeout(loadHistory, 2000); // 延迟刷新列表
             }
-            btn.disabled = false;
-            loadHistory();
         };
 
         // 加载历史记录
         async function loadHistory() {
             const list = document.getElementById('historyList');
             try {
-                const res = await fetch(`${API_BASE}/history`);
+                const res = await fetch(`${API_BASE}/history?limit=10`);
                 const data = await res.json();
+                
                 if (data.items && data.items.length > 0) {
                     list.innerHTML = data.items.map(item => `
-                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="showReport('${item.query_id}')">
-                            <span>${item.stock_code} - ${new Date(item.created_at).toLocaleString()}</span>
-                            <span class="badge bg-primary rounded-pill">查看</span>
+                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" onclick="showReport('${item.query_id}', '${item.stock_code}')">
+                            <div>
+                                <strong class="text-dark">${item.stock_code}</strong> 
+                                <span class="text-secondary ms-2">${item.stock_name || ''}</span>
+                                <div class="time-tag mt-1">${new Date(item.created_at).toLocaleString()}</div>
+                            </div>
+                            <span class="badge bg-light text-primary border border-primary-subtle rounded-pill px-3">查看报告</span>
                         </button>
                     `).join('');
                 } else {
-                    list.innerHTML = '<p class="text-muted">暂无历史记录。</p>';
+                    list.innerHTML = '<div class="p-4 text-center text-muted">暂无分析历史。</div>';
                 }
             } catch (err) {
-                list.innerHTML = '<p class="text-danger">加载失败</p>';
+                list.innerHTML = '<div class="p-4 text-center text-danger">数据加载异常，请刷新页面。</div>';
             }
         }
 
-        // 显示报告
-        async function showReport(queryId) {
+        // 显示详情
+        async function showReport(queryId, stockCode) {
             const modal = document.getElementById('reportModal');
             const detail = document.getElementById('reportDetail');
-            modal.classList.remove('d-none');
-            detail.innerText = '加载中...';
+            const title = document.getElementById('reportTitle');
             
+            modal.classList.remove('d-none');
+            title.innerText = stockCode;
+            detail.innerText = '正在从数据库调取深度分析结果...';
+            modal.scrollIntoView({ behavior: 'smooth' });
+
             try {
                 const res = await fetch(`${API_BASE}/history/${queryId}`);
                 const data = await res.json();
-                detail.innerText = data.content || '无内容';
-                modal.scrollIntoView();
+                detail.innerText = data.content || '报告内容为空。';
             } catch (err) {
-                detail.innerText = '加载详情失败';
+                detail.innerText = '无法获取报告详情。';
             }
         }
 
+        function closeReport() {
+            document.getElementById('reportModal').classList.add('d-none');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 初始化
         loadHistory();
+        // 每 30 秒自动刷新一次列表
+        setInterval(loadHistory, 30000);
     </script>
 </body>
 </html>
