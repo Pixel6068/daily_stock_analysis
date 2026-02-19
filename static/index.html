@@ -7,32 +7,47 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f8f9fa; padding-top: 50px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .container { max-width: 800px; }
+        .container { max-width: 900px; }
         .card { border: none; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 8px 16px rgba(0,0,0,0.05); }
         .card-header { background-color: #fff; border-bottom: 1px solid #f0f0f0; border-radius: 12px 12px 0 0 !important; font-weight: bold; }
         .btn-primary { background-color: #007bff; border: none; border-radius: 8px; padding: 10px 20px; }
         .btn-primary:hover { background-color: #0056b3; }
-        .report-content { white-space: pre-wrap; background: #fdfdfd; padding: 20px; border-radius: 8px; border: 1px solid #eee; max-height: 600px; overflow-y: auto; font-size: 14px; line-height: 1.6; }
-        .stock-tag { display: inline-block; padding: 2px 8px; background: #e7f3ff; color: #007bff; border-radius: 4px; font-size: 12px; margin-right: 5px; }
+        .report-content { background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #eee; font-size: 14px; line-height: 1.6; }
+        .stock-tag { display: inline-block; padding: 2px 10px; background: #e7f3ff; color: #007bff; border-radius: 4px; font-size: 13px; margin-right: 8px; margin-bottom: 5px; cursor: pointer; }
         .time-tag { color: #999; font-size: 12px; }
+        .sentiment-badge { font-size: 14px; padding: 5px 12px; border-radius: 20px; font-weight: bold; }
+        .sentiment-score { font-size: 24px; font-weight: 800; color: #333; }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-box { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #eee; }
+        .stat-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .stat-value { font-size: 16px; font-weight: bold; }
+        .conclusion-box { background: #fff8f8; border-left: 4px solid #dc3545; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .battle-plan { background: #f0f7ff; border-left: 4px solid #007bff; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
         .stock-status { font-size: 12px; padding: 2px 8px; border-radius: 4px; }
         .status-pending { background: #fff3cd; color: #856404; }
         .status-success { background: #d1e7dd; color: #0f5132; }
         .status-error { background: #f8d7da; color: #842029; }
+        .remove-btn { color: #ccc; margin-left: 5px; }
+        .remove-btn:hover { color: #ff4d4f; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2 class="text-center mb-5">📊 每日股票分析控制台</h2>
-
+        
         <div class="card">
             <div class="card-header">🚀 触发分析</div>
             <div class="card-body">
-                <p class="text-muted small">系统将逐一分析以下美股：
-                    <span class="stock-tag">NVDA 英伟达</span>
-                    <span class="stock-tag">GOOGL 谷歌</span>
-                    <span class="stock-tag">AMZN 亚马逊</span>
-                </p>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">自选股票代码 (输入后按回车添加)：</label>
+                    <div class="input-group mb-2">
+                        <input type="text" id="newStockCode" class="form-control" placeholder="例如: AAPL, TSLA, 00700.HK">
+                        <button class="btn btn-outline-secondary" onclick="addCustomStock()">添加</button>
+                    </div>
+                    <div id="stockTags" class="d-flex flex-wrap">
+                        <!-- 动态生成股票标签 -->
+                    </div>
+                </div>
                 <button id="analyzeBtn" class="btn btn-primary w-100">立即开始智能分析</button>
                 <div id="analyzeStatus" class="mt-3"></div>
             </div>
@@ -49,77 +64,103 @@
 
         <!-- 报告详情 Modal 效果 -->
         <div id="reportModal" class="card d-none">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header d-flex justify-content-between align-items-center bg-dark text-white">
                 <span>📄 报告详情: <span id="reportTitle"></span></span>
-                <button class="btn-close" onclick="closeReport()"></button>
+                <button class="btn-close btn-close-white" onclick="closeReport()"></button>
             </div>
             <div class="card-body">
-                <div id="reportDetail" class="report-content"></div>
+                <div id="reportDetail" class="report-content">
+                    <!-- 动态生成报告内容 -->
+                </div>
                 <div class="text-end mt-3">
-                    <button class="btn btn-secondary btn-sm" onclick="closeReport()">返回列表</button>
+                    <button class="btn btn-secondary btn-sm px-4" onclick="closeReport()">返回列表</button>
                 </div>
             </div>
         </div>
     </div>
+
     <script>
         const API_BASE = '/api/v1';
-        const STOCKS = [
-            { code: 'NVDA', name: '英伟达' },
-            { code: 'GOOGL', name: '谷歌' },
-            { code: 'AMZN', name: '亚马逊' }
-        ];
+        let customStocks = ['NVDA', 'GOOGL', 'AMZN'];
 
-        // 提交分析 - 逐一提交每只股票
+        function renderStockTags() {
+            const container = document.getElementById('stockTags');
+            container.innerHTML = customStocks.map(s => \`
+                <span class=\"stock-tag\">
+                    \${s}
+                    <span class=\"remove-btn\" onclick=\"removeStock('\${s}')\">&times;</span>
+                </span>
+            \`).join('');
+        }
+
+        function addCustomStock() {
+            const input = document.getElementById('newStockCode');
+            const code = input.value.trim().toUpperCase();
+            if (code && !customStocks.includes(code)) {
+                customStocks.push(code);
+                renderStockTags();
+                input.value = '';
+            }
+        }
+
+        function removeStock(code) {
+            customStocks = customStocks.filter(s => s !== code);
+            renderStockTags();
+        }
+
+        document.getElementById('newStockCode').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addCustomStock();
+        });
+
+        // 提交分析
         document.getElementById('analyzeBtn').onclick = async () => {
+            if (customStocks.length === 0) return alert('请先添加至少一只股票');
+            
             const btn = document.getElementById('analyzeBtn');
             const status = document.getElementById('analyzeStatus');
             btn.disabled = true;
 
-            // 为每只股票显示状态行
-            let statusHTML = '<div class="mt-2">';
-            STOCKS.forEach(s => {
-                statusHTML += `<div class="d-flex align-items-center mb-1" id="status-${s.code}">
-                    <span class="me-2">${s.name}（${s.code}）</span>
-                    <span class="stock-status status-pending">等待提交...</span>
-                </div>`;
+            let statusHTML = '<div class=\"mt-2\">';
+            customStocks.forEach(s => {
+                statusHTML += \`
+                    <div class=\"d-flex align-items-center mb-1\" id=\"status-\${s.replace('.', '-')}\">
+                        <span class=\"me-2\">\${s}</span>
+                        <span class=\"stock-status status-pending\">等待提交...</span>
+                    </div>\`;
             });
             statusHTML += '</div>';
             status.innerHTML = statusHTML;
 
-            let allSuccess = true;
-            for (const stock of STOCKS) {
-                const rowEl = document.getElementById(`status-${stock.code}`);
+            for (const stock of customStocks) {
+                const rowId = \`status-\${stock.replace('.', '-')}\`;
+                const rowEl = document.getElementById(rowId);
                 const tagEl = rowEl.querySelector('.stock-status');
                 tagEl.className = 'stock-status status-pending';
                 tagEl.textContent = '提交中...';
 
                 try {
-                    const response = await fetch(`${API_BASE}/analysis/analyze`, {
+                    const response = await fetch(\`\${API_BASE}/analysis/analyze\`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            stock_codes: [stock.code],
+                            stock_codes: [stock],
                             async_mode: true,
                             report_type: 'detailed'
                         })
                     });
-                    const data = await response.json();
-
+                    
                     if (response.ok || response.status === 202 || response.status === 409) {
                         tagEl.className = 'stock-status status-success';
                         tagEl.textContent = response.status === 409 ? '分析中（已在队列）' : '✅ 已加入队列';
                     } else {
                         tagEl.className = 'stock-status status-error';
                         tagEl.textContent = '❌ 提交失败';
-                        allSuccess = false;
                     }
                 } catch (err) {
                     tagEl.className = 'stock-status status-error';
                     tagEl.textContent = '❌ 网络错误';
-                    allSuccess = false;
                 }
             }
-
             btn.disabled = false;
             setTimeout(loadHistory, 3000);
         };
@@ -128,31 +169,26 @@
         async function loadHistory() {
             const list = document.getElementById('historyList');
             try {
-                const res = await fetch(`${API_BASE}/history?limit=20`);
+                const res = await fetch(\`\${API_BASE}/history?limit=20\`);
                 const data = await res.json();
-
                 if (data.items && data.items.length > 0) {
-                    list.innerHTML = data.items.map(item => `
-                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" onclick="showReport('${item.query_id}', '${item.stock_code}')">
+                    list.innerHTML = data.items.map(item => \`
+                        <button class=\"list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3\" 
+                                onclick=\"showReport('\${item.query_id}', '\${item.stock_code}')\">
                             <div>
-                                <strong class="text-dark">${item.stock_code}</strong>
-                                <span class="text-secondary ms-2">${item.stock_name || getStockName(item.stock_code)}</span>
-                                <div class="time-tag mt-1">${new Date(item.created_at).toLocaleString()}</div>
+                                <strong class=\"text-dark\">\${item.stock_code}</strong>
+                                <span class=\"text-secondary ms-2 small\">\${item.stock_name || ''}</span>
+                                <div class=\"time-tag mt-1\">\${new Date(item.created_at).toLocaleString()}</div>
                             </div>
-                            <span class="badge bg-light text-primary border border-primary-subtle rounded-pill px-3">查看报告</span>
+                            <span class=\"badge bg-light text-primary border border-primary-subtle rounded-pill px-3\">查看报告</span>
                         </button>
-                    `).join('');
+                    \`).join('');
                 } else {
-                    list.innerHTML = '<div class="p-4 text-center text-muted">暂无分析历史。</div>';
+                    list.innerHTML = '<div class=\"p-4 text-center text-muted\">暂无分析历史。</div>';
                 }
             } catch (err) {
-                list.innerHTML = '<div class="p-4 text-center text-danger">数据加载异常，请刷新页面。</div>';
+                list.innerHTML = '<div class=\"p-4 text-center text-danger\">数据加载异常，请刷新页面。</div>';
             }
-        }
-
-        function getStockName(code) {
-            const map = { 'NVDA': '英伟达', 'GOOGL': '谷歌', 'AMZN': '亚马逊' };
-            return map[code] || '';
         }
 
         // 显示详情
@@ -160,17 +196,104 @@
             const modal = document.getElementById('reportModal');
             const detail = document.getElementById('reportDetail');
             const title = document.getElementById('reportTitle');
-
+            
             modal.classList.remove('d-none');
-            title.innerText = `${stockCode} ${getStockName(stockCode)}`;
-            detail.innerText = '正在从数据库调取深度分析结果...';
+            title.innerText = \`\${stockCode}\`;
+            detail.innerHTML = '<div class=\"text-center p-5 text-muted\">正在调取深度分析结果...</div>';
             modal.scrollIntoView({ behavior: 'smooth' });
+
             try {
-                const res = await fetch(`${API_BASE}/history/${queryId}`);
+                const res = await fetch(\`\${API_BASE}/history/\${queryId}\`);
                 const data = await res.json();
-                detail.innerText = data.content || '报告内容为空。';
+                
+                const raw = data.details?.raw_result || {};
+                const dashboard = raw.dashboard || {};
+                const core = dashboard.core_conclusion || {};
+                const battle = dashboard.battle_plan || {};
+                const sentiment = data.summary || {};
+
+                // 根据分值决定颜色
+                const getScoreColor = (score) => {
+                    if (score >= 70) return '#198754'; 
+                    if (score >= 50) return '#ffc107'; 
+                    return '#dc3545'; 
+                };
+
+                detail.innerHTML = \`
+                    <div class=\"d-flex justify-content-between align-items-start mb-4\">
+                        <div>
+                            <h3 class=\"mb-1\">\${data.meta?.stock_name || stockCode}</h3>
+                            <div class=\"text-muted small\">\${new Date(data.meta?.created_at).toLocaleString()}</div>
+                        </div>
+                        <div class=\"text-end\">
+                            <div class=\"sentiment-score\" style=\"color: \${getScoreColor(sentiment.sentiment_score)}\">\${sentiment.sentiment_score || 'N/A'}</div>
+                            <div class=\"sentiment-badge badge\" style=\"background: \${getScoreColor(sentiment.sentiment_score)}\">\${sentiment.sentiment_label || '未知'}</div>
+                        </div>
+                    </div>
+
+                    <div class=\"dashboard-grid\">
+                        <div class=\"stat-box\">
+                            <div class=\"stat-label\">趋势预测</div>
+                            <div class=\"stat-value text-primary\">\${sentiment.trend_prediction || 'N/A'}</div>
+                        </div>
+                        <div class=\"stat-box\">
+                            <div class=\"stat-label\">操作建议</div>
+                            <div class=\"stat-value text-danger\">\${sentiment.operation_advice || 'N/A'}</div>
+                        </div>
+                        <div class=\"stat-box\">
+                            <div class=\"stat-label\">当前价格</div>
+                            <div class=\"stat-value font-monospace\">\${data.meta?.current_price?.toFixed(2) || 'N/A'}</div>
+                        </div>
+                        <div class=\"stat-box\">
+                            <div class=\"stat-label\">当日涨跌</div>
+                            <div class=\"stat-value \${data.meta?.change_pct >= 0 ? 'text-success' : 'text-danger'}\">
+                                \${data.meta?.change_pct >= 0 ? '+' : ''}\${data.meta?.change_pct || 0}%
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class=\"conclusion-box\">
+                        <h6 class=\"fw-bold mb-2\">核心结论</h6>
+                        <div class=\"fs-5\">\${core.one_sentence || '暂无核心结论。'}</div>
+                        <div class=\"mt-2 small\">
+                            <span class=\"badge bg-secondary me-2\">\${core.signal_type || '常规'}</span>
+                            <span class=\"text-muted\">时效：\${core.time_sensitivity || '今日'}</span>
+                        </div>
+                    </div>
+
+                    <div class=\"row\">
+                        <div class=\"col-md-7\">
+                            <h6 class=\"fw-bold mb-3 border-bottom pb-2\">分析摘要</h6>
+                            <p style=\"text-align: justify\">\${data.details?.analysis_summary || '暂无详细摘要。'}</p>
+                            
+                            <h6 class=\"fw-bold mt-4 mb-3 border-bottom pb-2\">技术面透视</h6>
+                            <ul class=\"list-unstyled small\">
+                                <li class=\"mb-2\"><strong>均线状态：</strong> \${raw.data_perspective?.trend_status?.ma_alignment || 'N/A'}</li>
+                                <li class=\"mb-2\"><strong>支撑位：</strong> \${raw.data_perspective?.price_position?.support_level || 'N/A'}</li>
+                                <li class=\"mb-2\"><strong>阻力位：</strong> \${raw.data_perspective?.price_position?.resistance_level || 'N/A'}</li>
+                                <li class=\"mb-2\"><strong>量能：</strong> \${raw.data_perspective?.volume_analysis?.volume_meaning || 'N/A'}</li>
+                            </ul>
+                        </div>
+                        <div class=\"col-md-5\">
+                            <div class=\"battle-plan\">
+                                <h6 class=\"fw-bold mb-3 text-primary\">作战建议</h6>
+                                <div class=\"small\">
+                                    <div class=\"mb-2\"><strong>建议仓位：</strong> \${battle.position_strategy?.suggested_position || 'N/A'}</div>
+                                    <div class=\"mb-2\"><strong>止损参考：</strong> \${battle.sniper_points?.stop_loss || 'N/A'}</div>
+                                    <div class=\"mb-2\"><strong>止盈参考：</strong> \${battle.sniper_points?.take_profit || 'N/A'}</div>
+                                </div>
+                            </div>
+                            
+                            <h6 class=\"fw-bold mb-3 border-bottom pb-2\">风险警示</h6>
+                            <div class=\"small\">
+                                \${(raw.intelligence?.risk_alerts || []).map(r => \`<div class=\"mb-1 text-danger\">⚠️ \${r}</div>\`).join('') || '暂无风险信息'}
+                            </div>
+                        </div>
+                    </div>
+                \`;
             } catch (err) {
-                detail.innerText = '无法获取报告详情。';
+                console.error(err);
+                detail.innerHTML = '<div class=\"alert alert-danger\">获取详情失败，请稍后重试。</div>';
             }
         }
 
@@ -180,8 +303,8 @@
         }
 
         // 初始化
+        renderStockTags();
         loadHistory();
-        // 每 30 秒自动刷新一次列表
         setInterval(loadHistory, 30000);
     </script>
 </body>
