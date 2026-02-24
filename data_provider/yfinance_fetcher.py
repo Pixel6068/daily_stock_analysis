@@ -403,6 +403,109 @@ class YfinanceFetcher(BaseFetcher):
             logger.warning(f"[Yfinance] 获取美股 {stock_code} 实时行情失败: {e}")
             return None
 
+    def get_fundamentals(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取美股基本面数据
+        
+        Args:
+            stock_code: 美股代码
+            
+        Returns:
+            包含基本面数据的字典，失败返回 None
+            包括: PE、PB、ROE、营收增长率、净利润增长率等
+        """
+        import yfinance as yf
+        
+        if not self._is_us_stock(stock_code):
+            return None
+            
+        try:
+            symbol = stock_code.strip().upper()
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            
+            fundamentals = {
+                'pe_ratio': info.get('trailingPE') or info.get('forwardPE'),
+                'pb_ratio': info.get('priceToBook'),
+                'roe': info.get('returnOnEquity'),
+                'revenue_growth': info.get('revenueGrowth'),
+                'earnings_growth': info.get('earningsGrowth'),
+                'profit_margin': info.get('profitMargins'),
+                'debt_to_equity': info.get('debtToEquity'),
+                'current_ratio': info.get('currentRatio'),
+                'dividend_yield': info.get('dividendYield'),
+                'eps': info.get('trailingEps') or info.get('forwardEps'),
+                'market_cap': info.get('marketCap'),
+                'sector': info.get('sector'),
+                'industry': info.get('industry'),
+            }
+            
+            logger.info(f"[Yfinance] 获取 {symbol} 基本面数据成功")
+            return fundamentals
+            
+        except Exception as e:
+            logger.warning(f"[Yfinance] 获取基本面数据失败: {e}")
+            return None
+
+    def get_institutional_holders(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取美股机构持仓数据（筹码数据）
+        
+        Args:
+            stock_code: 美股代码
+            
+        Returns:
+            包含机构持仓数据的字典，失败返回 None
+            包括: 机构持股比例、主要持仓机构列表等
+        """
+        import yfinance as yf
+        
+        if not self._is_us_stock(stock_code):
+            return None
+            
+        try:
+            symbol = stock_code.strip().upper()
+            ticker = yf.Ticker(symbol)
+            
+            # 获取机构持股信息
+            institutional_holders = ticker.institutional_holders
+            major_holders = ticker.major_holders
+            
+            result = {
+                'institutional_holders': [],
+                'institutional_ownership_pct': None,
+                'insider_ownership_pct': None,
+            }
+            
+            # 处理主要持股者数据
+            if major_holders is not None and not major_holders.empty:
+                try:
+                    # major_holders 通常包含机构持股比例和内部持股比例
+                    if len(major_holders) >= 2:
+                        result['institutional_ownership_pct'] = float(str(major_holders.iloc[0, 0]).rstrip('%'))
+                        result['insider_ownership_pct'] = float(str(major_holders.iloc[2, 0]).rstrip('%'))
+                except Exception:
+                    pass
+            
+            # 处理机构持股明细
+            if institutional_holders is not None and not institutional_holders.empty:
+                for idx, row in institutional_holders.head(10).iterrows():
+                    holder_info = {
+                        'name': row.get('Holder', ''),
+                        'shares': row.get('Shares', 0),
+                        'date_reported': str(row.get('Date Reported', '')),
+                        'pct_out': row.get('% Out', 0),
+                        'value': row.get('Value', 0),
+                    }
+                    result['institutional_holders'].append(holder_info)
+            
+            logger.info(f"[Yfinance] 获取 {symbol} 机构持仓数据成功")
+            return result
+            
+        except Exception as e:
+            logger.warning(f"[Yfinance] 获取机构持仓数据失败: {e}")
+            return None
+
 
 if __name__ == "__main__":
     # 测试代码
